@@ -10,14 +10,22 @@ public class Drag : MonoBehaviour
     private Camera _camera;
     private bool isDrag;
     private bool isOriginPos;
+    private bool isEndDrag = false;
+    private bool isComplete;
+    private bool isGameOver;
     public GameObject obstacle;
     private PolygonCollider2D centerOfCollider;
     private bool isTriggerWithObs;
+    private Vector2 goalCenterPos;
+    private Rigidbody2D handRb;
 
     [SerializeField] Text completeText;
-
+    [SerializeField] Text gameOverText;
     [SerializeField] private float speed = 1000.0f;
     [SerializeField] LayerMask obstacleMask;
+    [SerializeField] LayerMask goalMask;
+    [SerializeField] LayerMask sawMask;
+    [SerializeField] GameObject goal;
     [SerializeField] LineRenderer lineRenderer;
 
     List<Vector2> wrapPoints = new List<Vector2>();
@@ -49,7 +57,11 @@ public class Drag : MonoBehaviour
             {
                 transform.position = Vector2.MoveTowards(transform.position, lastWrapPoints[index], speed * Time.deltaTime);
                 if (transform.position.x == lastWrapPoints[index].x && transform.position.y == lastWrapPoints[index].y)
+                {
+                    lastWrapPoints.RemoveAt(index);
                     index--;
+                }
+                    
             }
             if ( index == 0)
             {
@@ -68,6 +80,16 @@ public class Drag : MonoBehaviour
             //transform.position = Vector2.MoveTowards(transform.position, originalPoint, speed * Time.deltaTime);
         }
         DrawLine();
+        if (isEndDrag) DrawBackLine();
+        if (isGameOver)
+        {
+            gameOverText.gameObject.SetActive(true);
+        }
+    }
+    private void FixedUpdate()
+    {
+        Vector2 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        handRb.MovePosition(Vector2.MoveTowards((Vector2)transform.position, mousePos, 10 * Time.deltaTime));
     }
     private void Start()
     {
@@ -75,6 +97,11 @@ public class Drag : MonoBehaviour
         centerOfCollider =  obstacle.GetComponent<PolygonCollider2D>();
         centerOfObs = centerOfCollider.bounds.center;
         completeText.gameObject.SetActive(false);
+        goalCenterPos = goal.GetComponent<PolygonCollider2D>().bounds.center;
+        handRb = GetComponent<Rigidbody2D>();
+        handRb.isKinematic = true;
+        isGameOver = false;
+        gameOverText.gameObject.SetActive(false);
     }
     private void OnMouseDown()
     {
@@ -83,31 +110,33 @@ public class Drag : MonoBehaviour
         wrapPoints.Add(currentWrapPoint);
         normals.Add(lastNormal);
         isDrag = true;
+        isEndDrag = false;
+        isGameOver = false;
+        completeText.gameObject.SetActive(false);
+        gameOverText.gameObject.SetActive(false);
+        handRb.bodyType = RigidbodyType2D.Dynamic;
     }
-    //IEnumerator ComeBack(float seconds,int index)
-    //{
-    //    while ( transform.position != new Vector3(wrapPoints[index].x, wrapPoints[index].y, transform.position.z))
-    //    {
-    //        transform.position = Vector2.MoveTowards(transform.position, wrapPoints[index], speed * Time.deltaTime);
-    //    }
-    //    yield return new WaitForSeconds(seconds);
-    //}
     private void OnMouseDrag()
     {
         Debug.Log("Drag!");
         isDrag = true;
         isOriginPos = false;
+        isEndDrag = false;
 
-        Vector2 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        //Vector2 mousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        //handRb.MovePosition(Vector2.MoveTowards((Vector2)transform.position, mousePos, 50 * Time.deltaTime));
 
-        transform.position = mousePos;
+        //transform.position = mousePos;
+
+        //handRb.MovePosition(mousePos);
+        //handRb.MovePosition(Vector2.MoveTowards((Vector2)transform.position, mousePos, 10 * Time.deltaTime));
 
         lastNormal = normals[normals.Count - 1];
 
         Vector2 anchorPoint = currentWrapPoint + lastNormal * 0.1f;
         //if (isTriggerWithObs == true) return ;
-
-        RaycastHit2D hit = Physics2D.Raycast(anchorPoint, (mousePos - anchorPoint).normalized, ((Vector2)transform.position - currentWrapPoint).magnitude,obstacleMask);
+        //1
+        RaycastHit2D hit = Physics2D.Raycast(anchorPoint, ((Vector2)transform.position - anchorPoint).normalized, ((Vector2)transform.position - currentWrapPoint).magnitude,obstacleMask);
         if (hit)
         {
             //AddPoint(hit);
@@ -132,7 +161,7 @@ public class Drag : MonoBehaviour
         {
             Vector2 current = currentWrapPoint;
             Vector2 previous = wrapPoints[wrapPoints.Count - 2];
-            Vector2 next = mousePos;
+            Vector2 next = transform.position;//2
             //Vector2 leftTangent = (normals[normals.Count - 1] - current).normalized;
             Vector2 leftTangent = (previous - current).normalized;
             Vector2 rightTangent = (next - current).normalized;
@@ -148,22 +177,57 @@ public class Drag : MonoBehaviour
                 Debug.Log("remove wrap point");
             }
         }
+        if (wrapPoints.Count > 1)
+        {
+            RaycastHit2D sawhit1 = Physics2D.Raycast(transform.position, ((Vector2) (wrapPoints[1] - (Vector2)transform.position)).normalized, ((Vector2) (wrapPoints[1] - (Vector2) transform.position)).magnitude, sawMask);
+            RaycastHit2D sawhit2 = Physics2D.Raycast(transform.position, ((Vector2)(wrapPoints[wrapPoints.Count-1] - (Vector2)transform.position)).normalized, ((Vector2)(wrapPoints[wrapPoints.Count-1] - (Vector2)transform.position)).magnitude, sawMask);
+            if (sawhit1 || sawhit2)
+            {
+                Debug.Log("Game Over!!");
+                isGameOver = true;
+            }
+        }else
+
+        {
+            RaycastHit2D sawhit = Physics2D.Raycast(transform.position, ((Vector2)(originalPoint - (Vector2)transform.position)).normalized, ((Vector2)(originalPoint - (Vector2)transform.position)).magnitude, sawMask);
+            if (sawhit)
+            {
+                Debug.Log("Game Over!!");
+                isGameOver = true;
+            }
+        }
     }
     void DrawLine()
     {
         List<Vector2> drawPoints = new List<Vector2>(wrapPoints);
-        drawPoints.Add(Camera.main.ScreenToWorldPoint(Input.mousePosition));
+        //3
+        //drawPoints.Add(Camera.main.ScreenToWorldPoint(Input.mousePosition));
+        drawPoints.Add((Vector2)transform.position);
         lineRenderer.positionCount = drawPoints.Count;
         if(wrapPoints.Count > 0)
         {
+            lineRenderer.SetPosition(0, drawPoints[0]);
             for(int i = 1; i < drawPoints.Count; i++)
             {
                 Debug.DrawLine(drawPoints[i], drawPoints[i - 1]);
+                lineRenderer.SetPosition(i, drawPoints[i]);
+                lineRenderer.transform.rotation = transform.rotation;
             }
-            for (int i = 0; i < drawPoints.Count; i++)
+        }
+
+    }
+    void DrawBackLine()
+    {
+        List<Vector2> drawPoints = new List<Vector2>(lastWrapPoints);
+        drawPoints.Add(transform.position);
+        lineRenderer.positionCount = drawPoints.Count;
+        if (lastWrapPoints.Count > 0)
+        {
+            
+            for (int i = drawPoints.Count-1;i>=0; i--)
             {
                 lineRenderer.SetPosition(i, drawPoints[i]);
-           //     lineRenderer.transform.rotation = transform.rotation;
+                lineRenderer.transform.rotation = transform.rotation;
             }
         }
 
@@ -171,10 +235,24 @@ public class Drag : MonoBehaviour
     private void OnMouseUp()
     {
         isDrag = false;
+        isEndDrag = true;
         lastWrapPoints = new List<Vector2>(wrapPoints);
         index = lastWrapPoints.Count - 1;
         wrapPoints.Clear();
         normals.Clear();
+        handRb.bodyType = RigidbodyType2D.Kinematic;
+        if (isComplete)
+        {
+            completeText.gameObject.SetActive(true);
+            Debug.Log("Complete!!");
+            isComplete = false;
+        } 
+        //Vector2 mousePos = GetMousePos();
+        //RaycastHit2D hit = Physics2D.Raycast(transform.position, ((Vector2)transform.position - goalCenterPos).normalized, ((Vector2)transform.position - (Vector2)goalCenterPos).magnitude, goalMask);
+        //if (hit)
+        //{
+        //    completeText.gameObject.SetActive(true);
+        //}
     }
     Vector3 GetMousePos()
     {
@@ -196,17 +274,38 @@ public class Drag : MonoBehaviour
         return orderedDictionary.Any() ? orderedDictionary.First().Value : Vector2.zero;
     }
 
-    private void OnTriggerEnter2D(Collider2D collision)
+    //private void OnTriggerEnter2D(Collider2D collision)
+    //{
+    //    if (collision.CompareTag("Obstacle"))
+    //    {
+    //        Debug.Log("Is trigger with hand!!");
+    //        isTriggerWithObs = true;
+    //    }
+    //    else if (collision.CompareTag("Goal"))
+    //    {
+    //        completeText.gameObject.SetActive(true);
+    //        Debug.Log("Complete!!");
+    //    }
+    //}
+    private void OnTriggerStay2D(Collider2D collision)
     {
-        if (collision.CompareTag("Obstacle"))
+        if (collision.CompareTag("Goal"))
         {
-            Debug.Log("Is trigger with hand!!");
-            isTriggerWithObs = true;
+            isComplete = true;
         }
-        else if (collision.CompareTag("Goal"))
+    }
+    private void OnTriggerExit2D(Collider2D collision)
+    {
+        if (collision.CompareTag("Goal"))
         {
-            completeText.gameObject.SetActive(true);
-            Debug.Log("Complete!!");
+            isComplete = false;
+        }
+    }
+    private void OnCollisionEnter2D(Collision2D collision)
+    {
+        if (CompareTag("Obstacle"))
+        {
+            Debug.Log("Is collider with Obstacle!!");
         }
     }
 }
